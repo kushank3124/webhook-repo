@@ -1,63 +1,107 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from pymongo import MongoClient
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.output_parsers import ResponseSchema, StructuredOutputParser
+import json
 
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 CORS(app)
 
-# MongoDB connection
-client = MongoClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017/'))
-db = client['github_events']
-collection = db['events']
+# Initialize LLM
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo",
+    temperature=0.7,
+    api_key=os.getenv('OPENAI_API_KEY')
+)
+
+# Define output schemas for LLM
+response_schemas = [
+    ResponseSchema(
+        name="analysis",
+        description="Analysis of the GitHub event and its potential impact"
+    ),
+    ResponseSchema(
+        name="action_items",
+        description="Suggested action items based on the event"
+    ),
+    ResponseSchema(
+        name="priority",
+        description="Priority level of the event (HIGH, MEDIUM, LOW)"
+    )
+]
+
+output_parser = StructuredOutputParser.from_response_schemas(response_schemas)
+
+# Store events in memory
+events = []
+
+def generate_fallback_analysis(event_data):
+    """Generate a basic analysis when LLM is unavailable"""
+    event_type = event_data.get('type', 'unknown')
+    
+    analysis = {
+        "analysis": f"Received a {event_type} event. LLM analysis unavailable due to API limits.",
+        "action_items": ["Review event details manually", "Check back later for AI analysis"],
+        "priority": "MEDIUM"
+    }
+    return analysis
+
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    data = request.json
+    event = request.json
     
-    # Extract the relevant information from the webhook payload
-    event_type = request.headers.get('X-GitHub-Event')
+    # Prepare event data for LLM analysis
+    event_type = event.get('type', 'unknown')
+    event_data = {
+        'type': event_type,
+        'timestamp': datetime.now().isoformat(),
+        'data': event
+    }
     
-    if event_type in ['push', 'pull_request']:
-        event_data = {
-            'request_id': request.headers.get('X-GitHub-Delivery'),
-            'timestamp': datetime.utcnow().isoformat(),
-            'author': data['sender']['login'] if 'sender' in data else None
-        }
+    try:
+        # Generate LLM analysis
+        prompt = ChatPromptTemplate.from_template("""
+        Analyze this GitHub event and provide insights:
+        {event}
         
-        if event_type == 'push':
-            event_data['action'] = 'PUSH'
-            event_data['to_branch'] = data['ref'].split('/')[-1]
-            event_data['from_branch'] = None
-            
-        elif event_type == 'pull_request':
-            action = data['action']
-            if action == 'opened':
-                event_data['action'] = 'PULL_REQUEST'
-            elif action == 'closed' and data['pull_request']['merged']:
-                event_data['action'] = 'MERGE'
-            else:
-                return jsonify({'status': 'ignored'}), 200
-                
-            event_data['from_branch'] = data['pull_request']['head']['ref']
-            event_data['to_branch'] = data['pull_request']['base']['ref']
+        {format_instructions}
+        """)
         
-        # Store in MongoDB
-        collection.insert_one(event_data)
-        return jsonify({'status': 'success'}), 200
+        format_instructions = output_parser.get_format_instructions()
+        
+        # Get LLM response
+        response = llm.invoke(
+            prompt.format_messages(
+                event=str(event_data),
+                format_instructions=format_instructions
+            )
+        )
+        
+        analysis = output_parser.parse(response.content)
+        event_data['analysis'] = analysis
+        
+    except Exception as e:
+        print(f"Error in LLM analysis: {str(e)}")
+        # Use fallback analysis when LLM fails
+        event_data['analysis'] = generate_fallback_analysis(event_data)
     
-    return jsonify({'status': 'ignored'}), 200
+    events.append(event_data)
+    return jsonify({'status': 'success', 'event': event_data})
 
-@app.route('/events', methods=['GET'])
+@app.route('/events')
 def get_events():
-    # Get the latest events from MongoDB
-    events = list(collection.find({}, {'_id': 0}).sort('timestamp', -1).limit(10))
     return jsonify(events)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000) 
+    app.run(debug=True) 
