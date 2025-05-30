@@ -1,13 +1,19 @@
 # GitHub Events Monitor
 
-This application monitors GitHub repository events (Push, Pull Request, and Merge) using webhooks and displays them in a clean UI.
+This application monitors GitHub repository events (Push, Pull Request, and Merge) using webhooks and displays them in a clean UI with LLM-powered analysis.
+
+## Features
+
+- Real-time monitoring of GitHub events
+- Intelligent event analysis using GPT-3.5
+- Priority-based event categorization
+- Actionable insights for each event
+- Clean and modern UI with automatic updates
 
 ## Test Webhook
 
-This is a test commit to verify webhook functionality.
+This is a test commit to verify webhook functionality with LLM integration.
 Testing webhook with ngrok integration - [Timestamp: 2024-03-14]
-Testing webhook event display - [Timestamp: 2024-03-14 02:30 IST]
-Testing webhook after fixing 405 error - [Timestamp: 2024-03-14 02:45 IST]
 
 ## Setup Instructions
 
@@ -21,22 +27,10 @@ Testing webhook after fixing 405 error - [Timestamp: 2024-03-14 02:45 IST]
    ```bash
    pip install -r requirements.txt
    ```
-4. Create a `.env` file with your MongoDB connection string:
+4. Set up your OpenAI API key in `.env`:
    ```
-   MONGODB_URI=mongodb://localhost:27017/
+   OPENAI_API_KEY=your_api_key_here
    ```
-
-## Configuring GitHub Webhooks
-
-1. Go to your GitHub repository settings
-2. Navigate to "Webhooks" section
-3. Click "Add webhook"
-4. Set the Payload URL to your server's endpoint: `http://your-server/webhook`
-5. Set Content type to `application/json`
-6. Select events:
-   - Push
-   - Pull requests
-7. Click "Add webhook"
 
 ## Running the Application
 
@@ -44,19 +38,18 @@ Testing webhook after fixing 405 error - [Timestamp: 2024-03-14 02:45 IST]
    ```bash
    python app.py
    ```
-2. Open `http://localhost:5000` in your browser
-3. The UI will automatically update every 15 seconds with new events
+2. Start ngrok tunnel:
+   ```bash
+   ngrok http 5000
+   ```
+3. Open the ngrok URL in your browser
+4. Configure GitHub webhooks with the ngrok URL
 
-## Features
+## Event Analysis
 
-- Real-time monitoring of GitHub events
-- Clean and minimal UI
-- Automatic polling every 15 seconds
-- Supports Push, Pull Request, and Merge events
-- MongoDB storage for event persistence
+The system uses OpenAI's GPT-3.5 to analyze each event and provides:
+- Impact analysis
+- Suggested action items
+- Priority level (HIGH, MEDIUM, LOW)
 
-## Event Formats
-
-- Push: "{author} pushed to {to_branch} on {timestamp}"
-- Pull Request: "{author} submitted a pull request from {from_branch} to {to_branch} on {timestamp}"
-- Merge: "{author} merged branch {from_branch} to {to_branch} on {timestamp}" 
+For detailed setup instructions, see [Webhook Setup Guide](docs/webhook-setup.md)
